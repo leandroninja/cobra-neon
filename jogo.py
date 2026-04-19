@@ -3,8 +3,48 @@ import sys
 import json
 import math
 import random
+import array
 from collections import deque
 from dataclasses import dataclass
+
+SR = 44100
+
+def _neon_blip(freq=660, dur=0.09, vol=0.32):
+    n = int(SR * dur)
+    buf = array.array('h', [0] * (n * 2))
+    for i in range(n):
+        env = 1.0 - (i / n) ** 0.5
+        val = int(32767 * vol * env * math.sin(2 * math.pi * freq * i / SR))
+        buf[2*i] = val; buf[2*i+1] = val
+    return pygame.mixer.Sound(buffer=buf)
+
+def _neon_powerup(vol=0.35):
+    notas = [330, 415, 523, 659, 830]
+    dur   = 0.07
+    n_tot = int(SR * dur * len(notas))
+    buf   = array.array('h', [0] * (n_tot * 2))
+    for idx, freq in enumerate(notas):
+        ini = int(idx * SR * dur)
+        fim = int((idx + 1) * SR * dur)
+        for i in range(ini, fim):
+            t   = (i - ini) / SR
+            vib = 1 + 0.015 * math.sin(2 * math.pi * 6 * t)
+            env = 1.0 - (i - ini) / (fim - ini)
+            val = int(32767 * vol * env * math.sin(2 * math.pi * freq * vib * t))
+            buf[2*i] = val; buf[2*i+1] = val
+    return pygame.mixer.Sound(buffer=buf)
+
+def _neon_morte(vol=0.4):
+    dur = 0.6
+    n   = int(SR * dur)
+    buf = array.array('h', [0] * (n * 2))
+    for i in range(n):
+        t    = i / SR
+        freq = 600 * math.exp(-3.5 * t)
+        env  = 1.0 - (i / n) ** 0.4
+        val  = int(32767 * vol * env * math.sin(2 * math.pi * freq * t))
+        buf[2*i] = val; buf[2*i+1] = val
+    return pygame.mixer.Sound(buffer=buf)
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 CELL     = 20
@@ -227,16 +267,18 @@ class Game:
 
     def _init_audio(self):
         try:
+            pygame.mixer.init(frequency=SR, size=-16, channels=2, buffer=512)
             pygame.mixer.music.load("Invincible.mp3")
-            pygame.mixer.music.set_volume(0.3)
+            pygame.mixer.music.set_volume(0.25)
             pygame.mixer.music.play(-1)
         except Exception:
             pass
         try:
-            self.sfx_eat = pygame.mixer.Sound("coin.wav")
-            self.sfx_eat.set_volume(0.6)
+            self.sfx_eat   = _neon_blip(660, 0.09, 0.32)
+            self.sfx_pwr   = _neon_powerup(0.35)
+            self.sfx_morte = _neon_morte(0.4)
         except Exception:
-            self.sfx_eat = None
+            self.sfx_eat = self.sfx_pwr = self.sfx_morte = None
 
     def _init_menu_snake(self):
         path = []
@@ -347,6 +389,7 @@ class Game:
             if self.score > self.highscore:
                 self.highscore = self.score
                 save_highscore(self.highscore)
+            if self.sfx_morte: self.sfx_morte.play()
             self.state = GAME_OVER
             return
 
@@ -360,8 +403,7 @@ class Game:
             self.score += 2 if self.pwr_timer > 0 else 1
             self.level  = self.score // 5 + 1
             self.speed  = min(SPEED_INIT + self.level - 1, SPEED_MAX)
-            if self.sfx_eat:
-                self.sfx_eat.play()
+            if self.sfx_eat: self.sfx_eat.play()
             spawn_particles(self.particles, nx, ny, FOOD_C)
             occupied = set(self.snake)
             self.food.respawn(occupied)
@@ -372,8 +414,7 @@ class Game:
             self.pwr_timer = PWR_DURATION
             self.powerup.active = False
             spawn_particles(self.particles, nx, ny, PWR_C, 20)
-            if self.sfx_eat:
-                self.sfx_eat.play()
+            if self.sfx_pwr: self.sfx_pwr.play()
         else:
             self.snake.pop()
 
