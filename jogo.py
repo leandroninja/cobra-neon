@@ -46,6 +46,63 @@ def _neon_morte(vol=0.4):
         buf[2*i] = val; buf[2*i+1] = val
     return pygame.mixer.Sound(buffer=buf)
 
+def _neon_musica(vol=0.16):
+    """Melodia futurista etérea em loop — sines com arpejo e baixo pulsante."""
+    bpm  = 118
+    beat = 60 / bpm
+    h    = beat / 2
+    q    = beat / 4
+
+    # Melodia principal (voz aguda — sine)
+    mel = [
+        (659, h), (0, q), (784, q), (880, h), (784, h),
+        (659, beat), (0, beat),
+        (523, h), (0, q), (659, q), (784, h), (659, h),
+        (523, beat), (0, beat),
+        (784, h), (0, q), (880, q), (988, h), (880, h),
+        (784, beat), (0, beat),
+        (659, h), (523, h), (440, beat), (0, beat),
+    ]
+    # Baixo pulsante (sine oitava abaixo, volume menor)
+    bass_notas = [165, 165, 131, 131, 196, 196, 131, 131]
+    bass_dur   = beat
+
+    total_mel  = sum(d for _, d in mel)
+    total_bass = bass_dur * len(bass_notas)
+    total      = max(total_mel, total_bass)
+    n          = int(total * SR)
+    buf        = array.array('h', [0] * (n * 2))
+
+    # Renderiza melodia
+    pos = 0
+    for freq, dur in mel:
+        samp = int(dur * SR)
+        for i in range(samp):
+            if freq > 0 and pos + i < n:
+                t   = i / SR
+                env = math.exp(-1.5 * t / dur)
+                vib = 1 + 0.008 * math.sin(2 * math.pi * 5.5 * t)
+                v   = int(32767 * vol * 0.7 * env * math.sin(2 * math.pi * freq * vib * t))
+                buf[2*(pos+i)]   = max(-32767, min(32767, buf[2*(pos+i)]   + v))
+                buf[2*(pos+i)+1] = max(-32767, min(32767, buf[2*(pos+i)+1] + v))
+        pos += samp
+
+    # Renderiza baixo
+    pos = 0
+    for freq in bass_notas:
+        samp = int(bass_dur * SR)
+        for i in range(samp):
+            if pos + i < n:
+                t   = i / SR
+                env = 0.6 + 0.4 * math.exp(-4 * t / bass_dur)
+                v   = int(32767 * vol * 0.5 * env * math.sin(2 * math.pi * freq * t))
+                buf[2*(pos+i)]   = max(-32767, min(32767, buf[2*(pos+i)]   + v))
+                buf[2*(pos+i)+1] = max(-32767, min(32767, buf[2*(pos+i)+1] + v))
+        pos += samp
+
+    return pygame.mixer.Sound(buffer=buf)
+
+
 # ── Constantes ────────────────────────────────────────────────────────────────
 CELL     = 20
 COLS     = 30
@@ -268,9 +325,8 @@ class Game:
     def _init_audio(self):
         try:
             pygame.mixer.init(frequency=SR, size=-16, channels=2, buffer=512)
-            pygame.mixer.music.load("Invincible.mp3")
-            pygame.mixer.music.set_volume(0.25)
-            pygame.mixer.music.play(-1)
+            self.musica = _neon_musica()
+            self.musica.play(-1)
         except Exception:
             pass
         try:
